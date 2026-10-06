@@ -1,0 +1,23 @@
+g:akari_options = {
+	  "default_model": "deepseek",
+	  "system_prompt": "you are catgirl",
+	  "instructions_file": "~/.config/akari/instructions.md",
+	  "stream": true,
+	  "always_allow_tools": ["read"],
+	  "log_file": "~/akari.log"
+  }
+
+g:akari_models = {
+	  "openai": {
+		  "type": "responses",
+		  "endpoint": "https://api.openai.com/v1",
+		  "model": "gpt-5.4",
+		  "api_key": "$OPENAI_API_KEY"
+	  },
+	  "ollama": {
+		  "type": "chat_completions",
+		  "endpoint": "http://localhost:11434/v1",
+		  "model": "qwen2.5-coder:14b",
+		  "api_key": ""
+	  }
+  }
