@@ -25,6 +25,44 @@ export def Lines(buf: number): list<string>
   return getbufline(buf, 1, '$')
 enddef
 
+export def Save(buf: number): void
+  var path = bufname(buf)
+  if !bufloaded(buf) || getbufvar(buf, '&buftype') != ''
+    throw 'not a loaded file buffer: ' .. path
+  endif
+  if getbufvar(buf, '&readonly')
+    throw 'buffer is read-only: ' .. path
+  endif
+  var original_window = win_getid()
+  var original_buffer = bufnr()
+  var original_view = winsaveview()
+  var switched_buffer = false
+  try
+    var parent = fnamemodify(path, ':p:h')
+    if !isdirectory(parent)
+      mkdir(parent, 'p')
+    endif
+    var window = bufwinid(buf)
+    if window < 0
+      execute 'noautocmd keepalt keepjumps hide buffer ' .. buf
+      switched_buffer = true
+      window = original_window
+    endif
+    win_execute(window, 'silent keepalt write')
+    if getbufvar(buf, '&modified')
+      throw 'buffer still has unsaved changes: ' .. path
+    endif
+  finally
+    if win_getid() != original_window
+      win_gotoid(original_window)
+    endif
+    if switched_buffer && bufexists(original_buffer)
+      execute 'noautocmd keepalt keepjumps hide buffer ' .. original_buffer
+      winrestview(original_view)
+    endif
+  endtry
+enddef
+
 export def ReplaceText(buf: number, text: string, final_eol: any = null): bool
   if !bufloaded(buf) || !getbufvar(buf, '&modifiable')
     return false

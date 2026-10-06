@@ -28,9 +28,14 @@ export def Run(input: dict<any>, session_state: dict<any>): dict<any>
     if !Buffer.ReplaceText(buf, content, final_eol)
       return {ok: false, output: 'failed to update buffer: ' .. abs}
     endif
+    try
+      Buffer.Save(buf)
+    catch
+      return {ok: false, output: 'buffer updated but save failed: ' .. v:exception, source: 'buffer'}
+    endtry
     return {
       ok: true,
-      output: 'updated buffer ' .. abs,
+      output: 'updated and saved buffer ' .. abs,
       created: !existed,
       source: 'buffer',
     }
@@ -66,7 +71,7 @@ enddef
 export def GetTool(): dict<any>
   return {
     name: 'write',
-    description: 'Create or overwrite a text file, creating missing parent directories. Use this for complete-file writes; use edit for a targeted replacement.',
+    description: 'Create or overwrite text. If a loaded buffer exists for the path, update and automatically save that buffer. Otherwise write the file, creating missing parent directories. Use this for complete-file writes; use edit for a targeted replacement.',
     schema: {
       type: 'object',
       properties: {

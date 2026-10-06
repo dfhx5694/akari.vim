@@ -189,7 +189,12 @@ export def Run(input: dict<any>, session_state: dict<any>): dict<any>
     if !Buffer.ReplaceText(buf, updated)
       return {ok: false, output: 'failed to update buffer: ' .. abs}
     endif
-    return {ok: true, output: 'edited buffer ' .. abs, fuzzy: fuzzy, source: 'buffer'}
+    try
+      Buffer.Save(buf)
+    catch
+      return {ok: false, output: 'buffer updated but save failed: ' .. v:exception, source: 'buffer'}
+    endtry
+    return {ok: true, output: 'edited and saved buffer ' .. abs, fuzzy: fuzzy, source: 'buffer'}
   endif
   try
     if !Text.WriteDisk(abs, updated)
@@ -204,7 +209,7 @@ enddef
 export def GetTool(): dict<any>
   return {
     name: 'edit',
-    description: 'Replace one unique text occurrence. If a loaded buffer exists for the path, edit that buffer and leave the file unchanged; otherwise edit the file. Read the target first and include enough surrounding context for an unambiguous match.',
+    description: 'Replace one unique text occurrence. If a loaded buffer exists for the path, edit and automatically save that buffer; otherwise edit the file. Read the target first and include enough surrounding context for an unambiguous match.',
     schema: {
       type: 'object',
       properties: {
