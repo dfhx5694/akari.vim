@@ -13,7 +13,7 @@ def BuildArguments(url: string, body_file: string, options: dict<any>): list<str
     '-',
     '-sS',
     '--fail-with-body',
-    '--max-time',
+    '--connect-timeout',
     printf('%.3f', timeout / 1000.0),
     '-X',
     'POST',
@@ -22,7 +22,10 @@ def BuildArguments(url: string, body_file: string, options: dict<any>): list<str
     'AKARI_HTTP_STATUS:%{http_code}',
   ]
   if get(options, 'stream', false)
-    add(args, '--no-buffer')
+    # curl's low-speed timeout allows long responses as long as data keeps arriving.
+    extend(args, ['--no-buffer', '--speed-limit', '1', '--speed-time', string((timeout + 999) / 1000)])
+  else
+    extend(args, ['--max-time', printf('%.3f', timeout / 1000.0)])
   endif
 
   add(args, '--data-binary')
@@ -103,7 +106,12 @@ def FinishRequest(state: dict<any>): void
   var body = substitute(state.body, 'AKARI_HTTP_STATUS:\d\{3}$', '', '')
   var error = ''
   if exit_code != 0 || status >= 400
-    var details = filter([trim(body), trim(state.error)], (_, text) => text != '')
+    # Successful SSE data is not an error payload; avoid echoing the whole stream.
+    var error_body = status >= 400 || state.on_data == null ? strpart(body, 0, 4096) : ''
+    if error_body != '' && strlen(body) > 4096
+      error_body ..= "\n[response body truncated]"
+    endif
+    var details = filter([trim(error_body), trim(strpart(state.error, 0, 4096))], (_, text) => text != '')
     error = printf('curl failed (HTTP %d, exit %d): %s', status, exit_code, join(details, "\n"))
   elseif state.error != ''
     error = 'akari: ' .. state.error
