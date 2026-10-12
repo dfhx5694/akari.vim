@@ -11,9 +11,9 @@ syntax match akariTagReasoning "^<<< reasoning"
 syntax match akariTagTool "^<<< tool"
 syntax match akariTagAssistant "^<<< assistant"
 
-syntax region akariFoldReasoning start="^<<< reasoning\>" end="\n^\(>>>\|<<<\)\s" fold transparent
-syntax region akariFoldThink start="^<<< think\>" end="\n^\(>>>\|<<<\)\s" fold transparent
-syntax region akariFoldTool start="^<<< tool\>" end="\n^\(>>>\|<<<\)\s" fold transparent
+syntax region akariFoldReasoning start="^<<< reasoning\>" end="^\ze\(>>>\|<<<\)\s" fold transparent
+syntax region akariFoldThink start="^<<< think\>" end="^\ze\(>>>\|<<<\)\s" fold transparent
+syntax region akariFoldTool start="^<<< tool\>" end="^\ze\(>>>\|<<<\)\s" fold transparent
 
 highlight def link akariTagSystem Comment
 highlight def link akariTagUser String
