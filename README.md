@@ -37,6 +37,17 @@ See [`config.example`](config.example) for configuration.
 
 Conversations are editable `.akari` files. Tools can access local files and run shell commands; requests require confirmation unless their names are in `always_allow_tools`.
 
+## Token usage
+
+`akari#usage#Get([buf])` returns the last recorded provider `usage` object for an akari buffer as JSON. `buf` defaults to the current/last akari buffer. The JSON also includes `used_tokens` and `used_percent`; the percentage is available only when the model sets `context_length`.
+
+```vim
+echo akari#usage#Get()
+echo akari#usage#Get(3)
+```
+
+Model settings accept `context_length`, a positive number used only for the percentage calculation; it is not sent to the provider.
+
 ## Add a tool
 
 Register tools with `akari#tool#Register(source, definitions)`:

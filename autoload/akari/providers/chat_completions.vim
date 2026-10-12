@@ -123,13 +123,16 @@ def ProcessStreamEvent(event: dict<any>, state: dict<any>, OnChunk: any): void
     state.error = 'provider returned an error: ' .. json_encode(object.error)
     return
   endif
+  if has_key(object, 'usage') && type(object.usage) == v:t_dict
+    state.usage = object.usage
+  endif
 
   var choices = get(object, 'choices', [])
   if type(choices) != v:t_list
     throw 'stream choices must be a list'
   endif
   if empty(choices)
-    if type(get(object, 'usage', null)) != v:t_dict
+    if state.usage == null
       throw 'empty stream choices require usage'
     endif
     return
@@ -284,6 +287,9 @@ def StreamResponse(state: dict<any>): dict<any>
   var response: dict<any> = {
     choices: [{index: 0, finish_reason: state.finish_reason == '' ? null : state.finish_reason, message: message}],
   }
+  if state.usage != null
+    response.usage = state.usage
+  endif
   if incomplete != ''
     response.incomplete = incomplete
   endif
@@ -374,6 +380,9 @@ def NormalizeResponse(response: any): dict<any>
   endif
   if has_key(response, 'error')
     throw 'provider returned an error: ' .. json_encode(response.error)
+  endif
+  if has_key(response, 'usage') && type(response.usage) != v:t_dict
+    throw 'response usage must be an object'
   endif
   var choices = get(response, 'choices', null)
   if type(choices) != v:t_list || len(choices) != 1
@@ -475,7 +484,7 @@ def BuildPayload(model: dict<any>, messages: list<dict<any>>, tools: list<dict<a
     throw 'chat completions only supports n=1'
   endif
   var payload: dict<any> = {}
-  var internal = ['type', 'endpoint', 'api_key', 'timeout', 'model', 'messages', 'stream', 'tools']
+  var internal = ['type', 'endpoint', 'api_key', 'timeout', 'model', 'messages', 'stream', 'tools', 'context_length']
   for [key, value] in items(model)
     if index(internal, key) < 0
       payload[key] = value
@@ -499,7 +508,7 @@ export def Chat(model: dict<any>, messages: list<dict<any>>, tools: list<dict<an
     var state: dict<any> = {
       content: '', reasoning: '', calls: {},
       parse_error: '', error: '', has_choice: false,
-      finish_reason: '', done: false,
+      finish_reason: '', done: false, usage: null,
     }
     var OnChunk = get(options, 'on_chunk', null)
     var headers = ['Content-Type: application/json']

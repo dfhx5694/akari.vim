@@ -112,6 +112,7 @@ def RunSession(buf: number, state: dict<any>, response: any, has_response: bool 
 		FailSession(buf, response_error)
 		return
 	endif
+	history.RecordUsage(buf, state.model, get(response, 'usage', null))
 	var message: dict<any> = response.choices[0].message
 	var content: string = message.content
 	var reasoning: string = message.reasoning_content

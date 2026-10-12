@@ -103,7 +103,7 @@ def BuildPayload(model: dict<any>, messages: list<dict<any>>, tools: list<dict<a
     throw 'background is not supported: remove background or set it to false; Responses requires a terminal response'
   endif
   var payload: dict<any> = {}
-  var internal = ['type', 'endpoint', 'api_key', 'timeout', 'model', 'input', 'stream', 'tools']
+  var internal = ['type', 'endpoint', 'api_key', 'timeout', 'model', 'input', 'stream', 'tools', 'context_length']
   for [key, value] in items(model)
     if index(internal, key) < 0
       payload[key] = value
@@ -125,6 +125,9 @@ def NormalizeResponse(response: any): dict<any>
   endif
   if get(response, 'error', null) != null
     throw 'provider returned an error: ' .. json_encode(response.error)
+  endif
+  if has_key(response, 'usage') && type(response.usage) != v:t_dict
+    throw 'response usage must be an object'
   endif
   var status = get(response, 'status', '')
   var incomplete = status == 'incomplete'
@@ -232,6 +235,9 @@ def NormalizeResponse(response: any): dict<any>
   var normalized: dict<any> = {
     choices: [{message: message}], id: get(response, 'id', ''), store: get(response, 'store', false),
   }
+  if has_key(response, 'usage')
+    normalized.usage = response.usage
+  endif
   if incomplete
     var details = get(response, 'incomplete_details', null)
     normalized.incomplete = type(details) == v:t_dict

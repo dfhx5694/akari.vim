@@ -67,6 +67,7 @@ export def Model(name: string): dict<any>
 		type: 'chat_completions',
 		timeout: 60000,
 		api_key: '',
+		context_length: null,
 	}
 	extend(model, deepcopy(models[name]), 'force')
 	for key in ['endpoint', 'model']
@@ -79,6 +80,9 @@ export def Model(name: string): dict<any>
 	endif
 	if type(model.timeout) != v:t_number || model.timeout <= 0
 		throw 'akari: model ' .. name .. ': timeout must be a positive number'
+	endif
+	if model.context_length != null && (type(model.context_length) != v:t_number || model.context_length <= 0)
+		throw 'akari: model ' .. name .. ': context_length must be a positive number or null'
 	endif
 	for key in [model.type == 'responses' ? 'input' : 'messages', 'stream', 'tools']
 		if has_key(model, key)

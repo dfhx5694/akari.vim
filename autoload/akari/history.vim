@@ -3,6 +3,7 @@ vim9script
 import autoload 'akari/config.vim'
 
 var streaming: dict<any> = {}
+var usages: dict<any> = {}
 
 def IsMarkerLike(line: string): bool
   return strpart(line, 0, 3) == '>>>' || strpart(line, 0, 3) == '<<<'
@@ -124,6 +125,67 @@ export def TargetBuffer(): number
     return buf
   endif
   return get(g:, 'akari_last_buffer', buf)
+enddef
+
+def UsedTokens(usage: dict<any>): any
+  for key in ['prompt_tokens', 'input_tokens']
+    var value: any = get(usage, key, null)
+    if type(value) == v:t_number && value >= 0
+      return value
+    endif
+  endfor
+  return null
+enddef
+
+export def RecordUsage(buf: number, model: dict<any>, usage: any): void
+  if usage != null && type(usage) != v:t_dict
+    throw 'akari: usage must be an object or null'
+  endif
+  usages[string(buf)] = {
+    buf: buf,
+    model: get(model, 'model', ''),
+    type: get(model, 'type', ''),
+    context_length: get(model, 'context_length', null),
+    usage: usage == null ? null : deepcopy(usage),
+  }
+enddef
+
+export def UsageJSON(buf: number = 0): string
+  var target = buf > 0 ? buf : TargetBuffer()
+  var entry: any = get(usages, string(target), null)
+  if entry == null
+    return json_encode({
+      buf: target, model: null, type: null, context_length: null,
+      usage: null, used_tokens: null, used_percent: null,
+    })
+  endif
+
+  var usage: any = entry.usage
+  var used: any = type(usage) == v:t_dict ? UsedTokens(usage) : null
+  var context_length: any = entry.context_length
+  var percent: any = null
+  if type(used) == v:t_number && type(context_length) == v:t_number && context_length > 0
+    percent = used * 100.0 / context_length
+  endif
+  return json_encode({
+    buf: target,
+    model: entry.model,
+    type: entry.type,
+    context_length: context_length,
+    usage: usage,
+    used_tokens: used,
+    used_percent: percent,
+  })
+enddef
+
+export def Forget(buf: number): void
+  var key = string(buf)
+  if has_key(streaming, key)
+    remove(streaming, key)
+  endif
+  if has_key(usages, key)
+    remove(usages, key)
+  endif
 enddef
 
 export def NewSession(): void
@@ -486,3 +548,8 @@ export def StartInput(buf: number): void
     cursor(line('$'), 1)
   endif
 enddef
+
+augroup AkariHistory
+  autocmd!
+  autocmd BufWipeout * Forget(str2nr(expand('<abuf>')))
+augroup END
