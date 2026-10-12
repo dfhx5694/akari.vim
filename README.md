@@ -59,12 +59,3 @@ call akari#tool#Register('my-plugin', [{
 ```
 
 `execute(input, state)` returns `{'ok': bool, 'output': string}`. The per-buffer `state` dictionary lives for the conversation session. Asynchronous tools can use `execute_async(input, state, callback)`; long-running tools should provide a `stop(state)` callback.
-
-## Tests
-
-```sh
-vim -Nu NONE -n -es -S tests/provider_boundaries.vim
-vim -Nu NONE -n -es -S tests/history_stream.vim
-```
-
-No external API calls are made by the tests. MIT licensed; see [`LICENSE`](LICENSE).
