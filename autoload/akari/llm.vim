@@ -209,13 +209,13 @@ export def Ask(): void
 	var buf = history.TargetBuffer()
 	var key = string(buf)
 	if states->has_key(key)
-		echoerr 'akari: session is already running in this buffer'
+		echo 'akari: session is already running in this buffer'
 		return
 	endif
 
 	var messages = history.Messages(buf)
 	if empty(messages) || messages[-1].role != 'user'
-		echoerr 'akari: no user input in history'
+		echo 'akari: no user input in history'
 		return
 	endif
 	var options = config.Options()
