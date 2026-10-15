@@ -3,16 +3,11 @@ vim9script
 import autoload 'akari/utils/buffer.vim' as Buffer
 
 var active_tasks: dict<any> = {}
+var jobs: dict<any> = {}
+var next_id: number = 0
 
 def ReadOutput(task: dict<any>): string
   return filereadable(task.file) ? join(readfile(task.file, 'b'), "\n") : ''
-enddef
-
-def EnsureState(session_state: dict<any>): void
-  if !has_key(session_state, 'jobs')
-    session_state.jobs = {}
-    session_state.next_id = 0
-  endif
 enddef
 
 def Result(task: dict<any>): dict<any>
@@ -83,7 +78,8 @@ def StopTask(task: dict<any>, status: string): void
   endif
 enddef
 
-def StartCommand(input: dict<any>, session_state: dict<any>, OnDone: any): dict<any>
+# OnDone is called on completion when non-null. Pass null to only get the start result.
+def StartCommand(input: dict<any>, OnDone: any): dict<any>
   if !has('job') || !has('timers')
     return {ok: false, output: 'this Vim build requires job and timer support'}
   endif
@@ -96,9 +92,8 @@ def StartCommand(input: dict<any>, session_state: dict<any>, OnDone: any): dict<
     return {ok: false, output: 'directory not found: ' .. cwd}
   endif
 
-  EnsureState(session_state)
-  session_state.next_id += 1
-  var id = string(session_state.next_id)
+  next_id += 1
+  var id = string(next_id)
   var task: dict<any> = {
     id: id,
     file: tempname(),
@@ -109,9 +104,9 @@ def StartCommand(input: dict<any>, session_state: dict<any>, OnDone: any): dict<
     output: '',
     timed_out: false,
     finished: false,
-    OnDone: get(input, 'async', false) ? null : OnDone,
+    OnDone: OnDone,
   }
-  session_state.jobs[id] = task
+  jobs[id] = task
   active_tasks[task.file] = task
   try
     task.job = job_start([&shell, &shellcmdflag, input.command], {
@@ -138,18 +133,63 @@ def StartCommand(input: dict<any>, session_state: dict<any>, OnDone: any): dict<
       job_stop(task.job, 'kill')
     endif
     CleanupFile(task)
-    remove(session_state.jobs, id)
+    remove(jobs, id)
     return {ok: false, output: 'failed to start command: ' .. error}
   endtry
-  return {ok: true, output: 'started bash job ' .. id, job_id: id, status: 'running'}
+  return {ok: true, output: 'started command job ' .. id, job_id: id, status: 'running'}
 enddef
 
-def GetResult(input: dict<any>, session_state: dict<any>): dict<any>
-  var id: string = input.job_id
-  if !has_key(session_state, 'jobs') || !has_key(session_state.jobs, id)
-    return {ok: false, output: 'unknown bash job: ' .. id}
+def ValidateInput(input: dict<any>): string
+  for key in ['command', 'path']
+    if has_key(input, key) && type(input[key]) != v:t_string
+      return key .. ' must be a string'
+    endif
+  endfor
+  if has_key(input, 'timeout')
+    if type(input.timeout) != v:t_number || input.timeout < 0
+      return 'timeout must be a non-negative integer in milliseconds'
+    endif
   endif
-  var task = session_state.jobs[id]
+  if get(input, 'command', '') == ''
+    return 'command is required'
+  endif
+  return ''
+enddef
+
+# run_command: run and wait for the result, delivered via OnDone.
+export def RunSync(input: dict<any>, session_state: dict<any>, OnDone: any): void
+  var err = ValidateInput(input)
+  if err != ''
+    call(OnDone, [{ok: false, output: err}])
+    return
+  endif
+  var result = StartCommand(input, OnDone)
+  if !result.ok
+    call(OnDone, [result])
+  endif
+enddef
+
+# start_command: return a job_id immediately.
+export def RunAsync(input: dict<any>, session_state: dict<any>, OnDone: any): void
+  var err = ValidateInput(input)
+  if err != ''
+    call(OnDone, [{ok: false, output: err}])
+    return
+  endif
+  call(OnDone, [StartCommand(input, null)])
+enddef
+
+# get_command_result: query a job started by start_command.
+export def GetJob(input: dict<any>, session_state: dict<any>): dict<any>
+  var raw = get(input, 'job_id', '')
+  if type(raw) != v:t_string || raw == ''
+    return {ok: false, output: 'job_id is required'}
+  endif
+  var id: string = raw
+  if !has_key(jobs, id)
+    return {ok: false, output: 'unknown command job: ' .. id}
+  endif
+  var task = jobs[id]
   if !task.finished
     try
       task.output = ReadOutput(task)
@@ -160,50 +200,9 @@ def GetResult(input: dict<any>, session_state: dict<any>): dict<any>
   return Result(task)
 enddef
 
-export def Run(input: dict<any>, session_state: dict<any>, OnDone: any): void
-  for key in ['mode', 'command', 'path', 'job_id']
-    if has_key(input, key) && type(input[key]) != v:t_string
-      call(OnDone, [{ok: false, output: key .. ' must be a string'}])
-      return
-    endif
-  endfor
-  if has_key(input, 'async') && type(input.async) != v:t_bool
-    call(OnDone, [{ok: false, output: 'async must be a boolean'}])
-    return
-  endif
-  if has_key(input, 'timeout')
-    if type(input.timeout) != v:t_number || input.timeout < 0
-      call(OnDone, [{ok: false, output: 'timeout must be a non-negative integer in milliseconds'}])
-      return
-    endif
-  endif
-  var mode: string = get(input, 'mode', 'run')
-  if mode == 'get'
-    if get(input, 'job_id', '') == ''
-      call(OnDone, [{ok: false, output: 'job_id is required'}])
-      return
-    endif
-    call(OnDone, [GetResult(input, session_state)])
-    return
-  elseif mode != 'run'
-    call(OnDone, [{ok: false, output: 'unknown bash mode: ' .. mode}])
-    return
-  endif
-  if get(input, 'command', '') == ''
-    call(OnDone, [{ok: false, output: 'command is required'}])
-    return
-  endif
-  var result = StartCommand(input, session_state, OnDone)
-  if !result.ok || get(input, 'async', false)
-    call(OnDone, [result])
-  endif
-enddef
-
+# Shared by all command jobs; called when the akari session is stopped.
 export def Stop(session_state: dict<any>): void
-  if !has_key(session_state, 'jobs')
-    return
-  endif
-  for task in values(session_state.jobs)
+  for task in values(jobs)
     StopTask(task, 'stopped')
   endfor
 enddef
@@ -216,28 +215,58 @@ def CleanupOnLeave(): void
   endfor
 enddef
 
-augroup akari_bash_jobs
+augroup akari_command_jobs
   autocmd!
   autocmd VimLeavePre * CleanupOnLeave()
 augroup END
 
 export def GetTool(): dict<any>
   return {
-    name: 'bash',
-    description: 'Run a shell command in the current working directory. By default async=false delivers one result on completion without blocking the editor, making it suitable for compilation; no extra sleep is needed. Set async=true to immediately receive a job_id, then use mode=get to query output and status. stdout and stderr are merged.',
+    name: 'run_command',
+    description: 'Run a shell command in the current working directory and wait for it to finish, then deliver the full output and exit code. Does not block the editor. stdout and stderr are merged.',
     schema: {
       type: 'object',
       properties: {
-        mode: {type: 'string', description: 'run (default) to execute a command, or get to retrieve a job.'},
-        command: {type: 'string', description: 'Shell command to execute in run mode; not needed in get mode.'},
-        path: {type: 'string', description: 'Working directory for run mode; defaults to the current working directory.'},
-        job_id: {type: 'string', description: 'Job id returned by an asynchronous run, required in get mode.'},
-        async: {type: 'boolean', description: 'Defaults to false: deliver one result on completion without blocking Vim. If true, immediately return a job_id for mode=get.'},
-        timeout: {type: 'integer', minimum: 0, description: 'Maximum command runtime in integer milliseconds for both async values; zero means no timeout.'},
+        command: {type: 'string', description: 'Shell command to execute.'},
+        path: {type: 'string', description: 'Working directory; defaults to the current working directory.'},
+        timeout: {type: 'integer', minimum: 0, description: 'Maximum runtime in integer milliseconds; zero means no timeout.'},
       },
-      required: [],
+      required: ['command'],
     },
-    execute_async: Run,
+    execute_async: RunSync,
     stop: Stop,
+  }
+enddef
+
+export def GetStartTool(): dict<any>
+  return {
+    name: 'start_command',
+    description: 'Start a shell command in the current working directory without waiting for it. Returns a job_id immediately; use get_command_result with that job_id to check status and read output. stdout and stderr are merged.',
+    schema: {
+      type: 'object',
+      properties: {
+        command: {type: 'string', description: 'Shell command to execute.'},
+        path: {type: 'string', description: 'Working directory; defaults to the current working directory.'},
+        timeout: {type: 'integer', minimum: 0, description: 'Maximum runtime in integer milliseconds; zero means no timeout.'},
+      },
+      required: ['command'],
+    },
+    execute_async: RunAsync,
+    stop: Stop,
+  }
+enddef
+
+export def GetJobTool(): dict<any>
+  return {
+    name: 'get_command_result',
+    description: 'Query a command job started by start_command. Returns its current status and output so far, or the final result if it has finished.',
+    schema: {
+      type: 'object',
+      properties: {
+        job_id: {type: 'string', description: 'Job id returned by start_command.'},
+      },
+      required: ['job_id'],
+    },
+    execute: GetJob,
   }
 enddef

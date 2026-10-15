@@ -3,7 +3,7 @@ g:akari_options = {
 	  "system_prompt": "you are catgirl",
 	  "instructions_file": "~/.config/akari/instructions.md",
 	  "stream": true,
-	  "always_allow_tools": ["read"],
+	  "always_allow_tools": ["read_file", "search", "list_dir"],
 	  "log_file": "~/akari.log"
   }
 

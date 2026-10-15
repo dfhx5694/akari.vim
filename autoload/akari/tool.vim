@@ -3,7 +3,9 @@ vim9script
 import autoload 'akari/config.vim' as config
 import autoload 'akari/tools/bash.vim' as Bash
 import autoload 'akari/tools/edit.vim' as Edit
-import autoload 'akari/tools/read.vim' as Read
+import autoload 'akari/tools/list_dir.vim' as ListDir
+import autoload 'akari/tools/read_file.vim' as ReadFile
+import autoload 'akari/tools/search.vim' as Search
 import autoload 'akari/tools/write.vim' as Write
 
 var tools: dict<any> = {}
@@ -83,6 +85,46 @@ def NormalizeResult(name: string, result: any): dict<any>
   return result
 enddef
 
+# Keys shown first in the confirmation prompt; the rest follow alphabetically.
+var PROMPT_FIRST: list<string> = ['path', 'command', 'pattern', 'job_id']
+var PREVIEW_MAX = 120
+
+def OrderedKeys(input: dict<any>): list<string>
+  var ordered: list<string> = []
+  for key in PROMPT_FIRST
+    if has_key(input, key)
+      add(ordered, key)
+    endif
+  endfor
+  for key in sort(keys(input))
+    if index(ordered, key) < 0
+      add(ordered, key)
+    endif
+  endfor
+  return ordered
+enddef
+
+def Preview(value: any): string
+  var text: string = type(value) == v:t_string ? value : json_encode(value)
+  var suffix = ''
+  if type(value) == v:t_string && stridx(text, "\n") >= 0
+    suffix = ' [' .. len(split(text, "\n", true)) .. ' lines]'
+  endif
+  text = substitute(text, "\n", '\\n', 'g')
+  if strchars(text) > PREVIEW_MAX
+    text = strcharpart(text, 0, PREVIEW_MAX) .. '...'
+  endif
+  return text .. suffix
+enddef
+
+def ConfirmText(name: string, input: dict<any>): string
+  var lines = ['akari: ' .. name]
+  for key in OrderedKeys(input)
+    add(lines, '  ' .. key .. ': ' .. Preview(input[key]))
+  endfor
+  return join(lines, "\n")
+enddef
+
 export def Execute(name: string, input: dict<any>, buf: number, OnDone: func): void
   var completion = {done: false}
   var Done = (result: any) => {
@@ -98,7 +140,7 @@ export def Execute(name: string, input: dict<any>, buf: number, OnDone: func): v
   var tool = tools[name]
   var allowed = config.Options().always_allow_tools
   if index(allowed, name) < 0
-    var prompt = 'akari: ' .. name .. "\n" .. json_encode(input)
+    var prompt = ConfirmText(name, input)
     if confirm(prompt, "&Yes\n&No") != 1
       Done({ok: false, output: 'user denied tool access', denied: true})
       return
@@ -175,7 +217,7 @@ export def ShowTools(): void
   endfor
 enddef
 
-Register('akari', [Read.GetTool(), Write.GetTool(), Edit.GetTool(), Bash.GetTool()])
+Register('akari', [ReadFile.GetTool(), Search.GetTool(), ListDir.GetTool(), Write.GetTool(), Edit.GetTool(), Bash.GetTool(), Bash.GetStartTool(), Bash.GetJobTool()])
 
 augroup AkariTools
   autocmd!
