@@ -1,6 +1,6 @@
 vim9script
 
-export def ValidateTools(messages: list<dict<any>>): void
+export def ValidateTools(messages: list<dict<any>>, allow_interleaved: bool = false): void
   var pending: dict<string> = {}
   var seen: dict<bool> = {}
   var receiving_results = false
@@ -9,7 +9,7 @@ export def ValidateTools(messages: list<dict<any>>): void
     message_index += 1
     var role = get(message, 'role', '')
     if role != 'tool'
-      if !empty(pending) && (receiving_results || index(['think', 'reasoning'], role) < 0)
+      if !allow_interleaved && !empty(pending) && (receiving_results || index(['think', 'reasoning'], role) < 0)
         throw printf('tool history message %d: missing results for %s', message_index, join(keys(pending), ', '))
       endif
       continue
@@ -20,7 +20,7 @@ export def ValidateTools(messages: list<dict<any>>): void
       throw printf('tool history message %d: id and tool must be non-empty strings', message_index)
     endif
     if has_key(message, 'arguments')
-      if receiving_results && !empty(pending)
+      if !allow_interleaved && receiving_results && !empty(pending)
         throw printf('tool history message %d: new call before previous results are complete', message_index)
       endif
       var arguments = message.arguments

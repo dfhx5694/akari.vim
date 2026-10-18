@@ -105,16 +105,18 @@ def FinishRequest(state: dict<any>): void
   var status = status_text == '' ? 0 : str2nr(status_text)
   var body = substitute(state.body, 'AKARI_HTTP_STATUS:\d\{3}$', '', '')
   var error = ''
-  if exit_code != 0 || status >= 400
+  # Anything but a 2xx is unusable: redirects are not followed and would
+  # otherwise be reported as a JSON parse error instead of a status error.
+  if exit_code != 0 || status < 200 || status >= 300
     # Successful SSE data is not an error payload; avoid echoing the whole stream.
-    var error_body = status >= 400 || state.on_data == null ? strpart(body, 0, 4096) : ''
+    var error_body = status < 200 || status >= 300 || state.on_data == null ? strpart(body, 0, 4096) : ''
     if error_body != '' && strlen(body) > 4096
       error_body ..= "\n[response body truncated]"
     endif
     var details = filter([trim(error_body), trim(strpart(state.error, 0, 4096))], (_, text) => text != '')
-    error = printf('curl failed (HTTP %d, exit %d): %s', status, exit_code, join(details, "\n"))
+    error = status == 0 && exit_code == 0 ? 'no HTTP status from curl' : printf('curl failed (HTTP %d, exit %d): %s', status, exit_code, join(details, "\n"))
   elseif state.error != ''
-    error = 'akari: ' .. state.error
+    error = state.error
   endif
   # Strip only curl's writeout, preserving SSE's terminating blank line.
   var tail = substitute(state.stream_tail, 'AKARI_HTTP_STATUS:\d\{3}$', '', '')
@@ -180,7 +182,7 @@ export def Request(url: string, body: string, options: dict<any>, OnDone: any): 
       close_cb: (_channel: channel) => Closed(state),
     })
   catch
-    state.start_error = 'akari: failed to start curl job: ' .. v:exception
+    state.start_error = 'failed to start curl job: ' .. v:exception
     state.exited = true
     state.closed = true
     FinishRequest(state)
@@ -194,7 +196,7 @@ export def Request(url: string, body: string, options: dict<any>, OnDone: any): 
     return
   endif
   if status == 'fail'
-    state.start_error = 'akari: failed to start curl job'
+    state.start_error = 'failed to start curl job'
     state.exited = true
     state.closed = true
     FinishRequest(state)

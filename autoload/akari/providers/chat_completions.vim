@@ -333,7 +333,7 @@ def FinishResponse(result: dict<any>, state: dict<any>, stream: bool, OnChunk: a
     return
   endif
   if state.error != ''
-    call(OnDone, [{choices: [], error: 'akari: ' .. state.error}])
+    call(OnDone, [{choices: [], error: state.error}])
     return
   endif
   var response: dict<any>
@@ -342,7 +342,7 @@ def FinishResponse(result: dict<any>, state: dict<any>, stream: bool, OnChunk: a
       ? StreamResponse(state)
       : json_decode(result.body))
   catch
-    call(OnDone, [{choices: [], error: 'akari: invalid chat completions response: ' .. v:exception}])
+    call(OnDone, [{choices: [], error: 'invalid chat completions response: ' .. v:exception}])
     return
   endtry
   call(OnDone, [response])
@@ -526,7 +526,7 @@ export def Chat(model: dict<any>, messages: list<dict<any>>, tools: list<dict<an
     http.Request(url, body, request_options,
       (result: dict<any>) => FinishResponse(result, state, stream, OnChunk, OnDone))
   catch
-    call(OnDone, [{choices: [], error: 'akari: failed to prepare chat request: ' .. v:exception}])
+    call(OnDone, [{choices: [], error: 'failed to prepare chat request: ' .. v:exception}])
   endtry
 enddef
 

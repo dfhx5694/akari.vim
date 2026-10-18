@@ -99,6 +99,12 @@ def FuzzyMatch(original: list<string>, target: list<string>): list<number>
   if result[0] != 0
     return result
   endif
+  # Indentation and trailing whitespace together, the usual form of a copied block.
+  var LooseMatch = (a: string, b: string): bool => TrimIndent(TrimSuffixWhitespace(a)) == TrimIndent(TrimSuffixWhitespace(b))
+  result = FindMatch(original, target, LooseMatch)
+  if result[0] != 0
+    return result
+  endif
   result = FindMatch(original, target, (a: string, b: string): bool => a == TrimEscapes(b))
   if result[0] != 0
     return result

@@ -110,7 +110,8 @@ def BuildPayload(model: dict<any>, messages: list<dict<any>>, tools: list<dict<a
     endif
   endfor
   payload.model = model.model
-  messagelib.ValidateTools(messages)
+  # Responses pairs calls with results by call_id and permits intervening items.
+  messagelib.ValidateTools(messages, true)
   payload.input = SerializeMessages(messages)
   payload.stream = stream
   if !empty(tools)
@@ -296,7 +297,7 @@ def FinishResponse(result: dict<any>, state: dict<any>, stream: bool, OnDone: an
     sse.Finish(state.sse)
   endif
   if state.parse_error != '' || state.error != ''
-    call(OnDone, [{choices: [], error: 'akari: invalid responses stream: ' ..
+    call(OnDone, [{choices: [], error: 'invalid responses stream: ' ..
       (state.parse_error != '' ? state.parse_error : state.error)}])
     return
   endif
@@ -311,7 +312,7 @@ def FinishResponse(result: dict<any>, state: dict<any>, stream: bool, OnDone: an
       response = NormalizeResponse(json_decode(get(result, 'body', '')))
     endif
   catch
-    call(OnDone, [{choices: [], error: 'akari: invalid responses response: ' .. v:exception}])
+    call(OnDone, [{choices: [], error: 'invalid responses response: ' .. v:exception}])
     return
   endtry
   call(OnDone, [response])
@@ -399,7 +400,7 @@ export def Chat(model: dict<any>, messages: list<dict<any>>, tools: list<dict<an
       (result: dict<any>) => FinishResponse(result, state, stream, Done))
   catch
     Forget(buf)
-    call(OnDone, [{choices: [], error: 'akari: failed to prepare responses request: ' .. v:exception}])
+    call(OnDone, [{choices: [], error: 'failed to prepare responses request: ' .. v:exception}])
   endtry
 enddef
 
