@@ -60,6 +60,12 @@ After installation, add this line to your vimrc: >
 
 	packadd akari.vim
 <
+After loading the plugin, run this command once to generate Vim help tags: >
+
+	:helptags ALL
+<
+You can then open this documentation with `:help akari`.
+
 To uninstall:
 	- If you used a plugin manager, use its uninstall command.
 	- If you installed the plugin manually, delete the

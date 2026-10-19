@@ -18,6 +18,8 @@ packadd akari.vim
 
 Alternatively, install and manage the plugin with a Vim plugin manager such as dein.vim, Pathogen, vim-plug, Volt, or Vundle.
 
+After installing and loading the plugin, run `:helptags ALL` once to generate Vim help tags. You can then open the documentation with `:help akari`.
+
 ## Configuration
 
 See `:help akari-configuration` for configuration options.
