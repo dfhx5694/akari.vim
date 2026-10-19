@@ -219,7 +219,17 @@ export def Ask(): void
 		return
 	endif
 	var options = config.Options()
-	var selected_model = config.Model(options.default_model)
+	var model_name = options.default_model
+	if model_name->empty()
+		var names = config.ModelNames()
+		if empty(names)
+			echo 'akari: no models configured in g:akari_models'
+			return
+		endif
+		model_name = names[0]
+		echo 'akari: current model is ' .. model_name
+	endif
+	var selected_model = config.Model(model_name)
 	var state: dict<any> = {
 		stopped: false,
 		messages: messages,
