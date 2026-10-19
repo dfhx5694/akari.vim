@@ -1,0 +1,375 @@
+*akari.txt*	LLM chat plugin for Vim 9
+
+Author: dfhx5694
+For Vim version 9.0 and above
+
+==============================================================================
+CONTENTS                                                     *akari-contents*
+
+	1. Introduction ........................ |akari-introduction|
+	2. Requirements ........................ |akari-requirements|
+	3. Installation ........................ |akari-installation|
+	4. Commands ............................ |akari-commands|
+	5. Configuration ....................... |akari-configuration|
+		5.1 Plugin options .............. |g:akari_options|
+		5.2 Model definitions ........... |g:akari_models|
+	6. Built-in tools ...................... |akari-tools|
+	7. Token usage ......................... |akari-usage|
+	8. Custom tools ........................ |akari-add-tool|
+	9. License ............................. |akari-license|
+
+==============================================================================
+1. Introduction                                      *akari-introduction*
+~
+
+akari.vim is an LLM chat plugin written in Vim9script. Conversations are
+stored in ordinary text buffers and can be edited freely. The assistant can
+read and write files, search directories, and run shell commands without
+blocking Vim.
+
+Features:
+	- Supports both the Chat Completions and Responses APIs (see
+	  |g:akari_models|)
+	- Streams responses as they arrive
+	- Provides a basic tool-calling loop; tools that can modify files or
+	  run commands require confirmation before they run
+	- Offers an extensible tool interface that other plugins can use to
+	  register tools (see |akari-add-tool|)
+
+==============================================================================
+2. Requirements                                      *akari-requirements*
+~
+
+	- Vim 9.0 or later, with Vim9script, job, channel, and timer support
+	- curl 7.76 or later available in PATH. The plugin checks for curl at
+	  startup and reports an error if it is missing.
+
+==============================================================================
+3. Installation                                      *akari-installation*
+~
+
+To install directly from GitHub: >
+
+	$ git clone https://github.com/dfhx5694/akari.vim \
+		$HOME/.vim/pack/plugins/opt/akari.vim
+<
+You can also install the plugin with a plugin manager such as dein.vim,
+Pathogen, VAM, vim-plug, Volt, or Vundle.
+
+After installation, add this line to your vimrc: >
+
+	packadd akari.vim
+<
+To uninstall:
+	- If you used a plugin manager, use its uninstall command.
+	- If you installed the plugin manually, delete the
+	  $HOME/.vim/pack/plugins/opt/akari.vim directory.
+
+==============================================================================
+4. Commands                                              *akari-commands*
+~
+
+:AkariNew                                                        *:AkariNew*
+	Start a new conversation in a new buffer. The conversation buffer
+	uses the akari filetype; files with the .akari extension are detected 
+	automatically.
+
+:AkariAsk                                                        *:AkariAsk*
+	Send the content after the last `>>> user` marker through the end of
+	the buffer, along with the conversation history, to the current model.
+	The response is appended to the buffer as it streams in.
+
+	You can edit the conversation history freely. The model receives the
+	conversation as it appears in the buffer when you send it.
+
+:AkariStop                                                      *:AkariStop*
+	Stop the current request or running tool.
+
+:AkariModel                                                    *:AkariModel*
+	Switch the default model. The available choices are the keys in
+	|g:akari_models|.
+
+:AkariTools                                                    *:AkariTools*
+	List the tools available in the current session and show whether each
+	tool is included in the |g:akari_options| always_allow_tools whitelist.
+
+==============================================================================
+5. Configuration                                  *akari-configuration*
+~
+
+Configure |g:akari_options| for plugin-wide behavior and |g:akari_models| to
+define the available API models. The `default_model` option selects a key
+from `g:akari_models`; use |:AkariModel| to switch models during a session.
+
+------------------------------------------------------------------------------
+5.1 Plugin options                                      *g:akari_options*
+~
+Example: >
+
+	g:akari_options = {
+		"default_model": "openai",
+		"system_prompt": "You are a helpful assistant.",
+		"instructions_file": "~/.config/akari/instructions.md",
+		"stream": true,
+		"always_allow_tools": ["read_file", "search", "list_dir"],
+		"log_file": "~/akari.log",
+	}
+<
+
+All fields are optional. If omitted, string fields default to an empty string
+and list fields default to an empty list.
+
+	Field			Type		Description~
+	default_model		string		Default model; a key of
+						|g:akari_models|
+	system_prompt		string		Text of the system prompt
+	instructions_file	string or list	Contents appended to the
+						system prompt
+	stream			bool		Stream responses as they
+						arrive; default false
+	always_allow_tools	list		Tools that run without
+						confirmation
+	log_file		string		Path to the log file
+
+Caution: Adding tools that can modify files or run commands (such as write,
+edit, or run_command) to always_allow_tools gives the model permission to use
+them without confirmation. Do so only if you trust the workflow.
+
+------------------------------------------------------------------------------
+5.2 Model definitions                                   *g:akari_models*
+~
+Each key is a model name and appears in the selection list for
+|:AkariModel|: >
+
+	g:akari_models = {
+		"openai": {
+			"type": "responses",
+			"endpoint": "https://api.openai.com/v1",
+			"model": "gpt-5.4",
+			"api_key": "$OPENAI_API_KEY",
+			"context_length": 400000,
+		},
+		"ollama": {
+			"type": "chat_completions",
+			"endpoint": "http://localhost:11434/v1",
+			"model": "qwen2.5-coder:14b",
+			"api_key": "",
+			"context_length": 32768,
+		},
+	}
+<
+
+endpoint and model are required; every other field is optional.
+
+	Field			Type		Description~
+	endpoint		string		API base URL
+	model			string		Model name sent to the API
+	type			string		`chat_completions` (default)
+						or `responses`
+	timeout			number		Request timeout in
+						milliseconds; default 60000
+	api_key			string		API key; a leading $ reads an
+						environment variable. May be
+						empty
+	context_length		number		Context window in tokens, used
+						for the usage percentage
+
+The input, messages, stream, and tools fields are generated by akari and
+cannot be set here.
+
+Any other fields are passed through to the API unchanged. For example: >
+
+	g:akari_models = {
+		"gpt6luna": {
+			"type": "responses",
+			"endpoint": "https://api.openai.com/v1",
+			"model": "gpt-6-luna",
+			"context_length": 1000000,
+			"api_key": "$OPENAI_API_KEY",
+			"store": true,
+			"reasoning": {
+				"effort": "high"
+			}
+		}
+	}
+
+<
+
+==============================================================================
+6. Built-in tools                                            *akari-tools*
+~
+
+The assistant can call the built-in tools listed below. Use |:AkariTools| to
+see which tools are available in the current session. Tools not included in
+the always_allow_tools whitelist require confirmation before execution.
+
+	read_file
+		Read a range of lines from a file. If the file is loaded in a
+		buffer, the buffer contents are used instead of the on-disk
+		contents. Reads up to 500 lines per call.
+
+	search
+		Find matching lines in a file or directory. Uses rg when
+		available; otherwise, falls back to Vim regular expressions.
+
+	list_dir
+		List directory contents, with optional glob filtering and
+		recursion.
+
+	write
+		Create or overwrite a file, creating missing parent directories
+		as needed. Use edit for targeted changes.
+
+	edit
+		Replace a unique occurrence of text in a file. The target must
+		first be read, and enough surrounding context must be provided to
+		identify the occurrence unambiguously.
+
+	run_command
+		Run a shell command in the working directory and wait for it to
+		finish. Returns the output and exit code.
+
+	start_command
+		Start a shell command without waiting for it to finish, and
+		return a job_id immediately.
+
+	get_command_result
+		Check the status and output of a job started with start_command.
+
+Safety note: Do not add tools that modify files or run commands to
+always_allow_tools unless you trust the model in that workflow.
+
+==============================================================================
+7. Token usage                                                *akari-usage*
+~
+
+							*akari#usage#Get()*
+akari#usage#Get([buf])
+	Return the most recently recorded provider usage object for an akari
+	buffer, in JSON format. If [buf] is omitted, the current akari buffer
+	is used, or the most recently used akari buffer if the current buffer
+	is not an akari buffer.
+
+	The returned JSON also includes used_tokens and used_percent.
+	used_percent is included only when the model has a context_length set.
+	>
+
+	echo akari#usage#Get()
+	echo akari#usage#Get(3)
+<
+
+==============================================================================
+8. Custom tools                                            *akari-add-tool*
+~
+
+						*akari#tool#Register()*
+Register tools with akari#tool#Register({source}, {definitions}). {source}
+is an identifier for the source, usually your plugin name. {definitions} is
+a list of tool definitions.
+
+execute({input}, {state}) must return a dictionary with the form
+{'ok': bool, 'output': string}. The {state} dictionary is stored per buffer
+and tool name, so calls to the same tool in a session can share state.
+
+Long-running tools can use execute_async({input}, {state}, {callback}) to run
+asynchronously. It is also recommended to provide a stop({state}) callback
+so that |:AkariStop| can cancel the tool. {callback} receives a result
+dictionary in the same format as the return value of execute, and must be
+called only once.
+
+The examples below are Vim9script. Put them in a script of your own, such as
+~/.vim/plugin/my-plugin.vim, starting with `vim9script`: >
+
+	vim9script
+
+	def Greet(input: dict<any>, state: dict<any>): dict<any>
+		return {ok: true, output: 'Hello, ' .. input.name}
+	enddef
+
+	akari#tool#Register('my-plugin', [{
+		name: 'greet',
+		description: 'Greet someone by name.',
+		schema: {
+			type: 'object',
+			properties: {name: {type: 'string'}},
+			required: ['name'],
+		},
+		execute: Greet,
+	}])
+<
+
+Example: a stateful, argument-free tool that increments a counter in
+{state} on each call within a session: >
+
+	def CountCalls(input: dict<any>, state: dict<any>): dict<any>
+		state.count = get(state, 'count', 0) + 1
+		return {
+			ok: true,
+			output: 'Call number ' .. string(state.count),
+		}
+	enddef
+
+	akari#tool#Register('my-plugin', [{
+		name: 'count_calls',
+		description: 'Return how many times this tool was called.',
+		schema: {type: 'object', properties: {}},
+		execute: CountCalls,
+	}])
+<
+
+Example: an asynchronous tool that returns a result through a callback after
+one second and supports cancellation: >
+
+	def SlowGreet(input: dict<any>, state: dict<any>, Done: func): void
+		state.timer = timer_start(1000,
+			(_) => Done({
+				ok: true,
+				output: 'Hello, ' .. input.name,
+			}))
+	enddef
+
+	def StopSlowGreet(state: dict<any>): void
+		timer_stop(get(state, 'timer', 0))
+	enddef
+
+	akari#tool#Register('my-plugin', [{
+		name: 'slow_greet',
+		description: 'Greet someone by name after a short delay.',
+		schema: {
+			type: 'object',
+			properties: {name: {type: 'string'}},
+			required: ['name'],
+		},
+		execute_async: SlowGreet,
+		stop: StopSlowGreet,
+	}])
+<
+
+==============================================================================
+9. License                                                  *akari-license*
+~
+
+MIT License
+
+Copyright (c) 2026 dfhx5694
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+vim:tw=78:ts=8:noet:ft=help:norl:
