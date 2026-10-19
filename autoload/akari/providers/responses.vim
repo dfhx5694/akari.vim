@@ -22,15 +22,46 @@ def RequireString(value: any, field: string, nonempty: bool = false): string
   return value
 enddef
 
-def SerializeMessages(messages: list<dict<any>>): list<dict<any>>
+def ModelKey(model: dict<any>): string
+  return json_encode([
+    model.type,
+    substitute(model.endpoint, '/\\+$', '', ''),
+    model.model,
+  ])
+enddef
+
+def SerializeMessages(messages: list<dict<any>>, model_key: string): list<dict<any>>
   var output: list<dict<any>> = []
   for message in messages
     var role = get(message, 'role', 'user')
     if role == 'think'
       continue
     elseif role == 'reasoning'
-      var item = copy(message)
-      remove(item, 'role')
+      var source_model: any = get(message, 'akari_model', '')
+      # Encrypted reasoning is opaque and model-specific. Older history has no
+      # provenance, so do not send it when it cannot be matched safely.
+      if (type(source_model) == v:t_string && source_model != '' && source_model != model_key)
+          || (has_key(message, 'encrypted_content')
+            && (type(source_model) != v:t_string || source_model == ''))
+        continue
+      endif
+      var item: dict<any> = {type: 'reasoning'}
+      var summary: any = get(message, 'summary', [])
+      if type(summary) != v:t_list
+        throw 'reasoning summary must be a list'
+      endif
+      item.summary = []
+      for part in summary
+        if type(part) != v:t_dict
+            || get(part, 'type', '') != 'summary_text'
+            || type(get(part, 'text', null)) != v:t_string
+          throw 'reasoning summary item must be a summary_text object'
+        endif
+        add(item.summary, {type: 'summary_text', text: part.text})
+      endfor
+      if has_key(message, 'encrypted_content') && message.encrypted_content != null
+        item.encrypted_content = RequireString(message.encrypted_content, 'reasoning encrypted_content')
+      endif
       add(output, item)
     elseif role == 'tool'
       var id = RequireString(get(message, 'id', null), 'tool call id', true)
@@ -59,18 +90,10 @@ def SerializeMessages(messages: list<dict<any>>): list<dict<any>>
           continue
         endif
         item.type = 'message'
-        item.status = RequireString(get(message, 'status', 'completed'), 'assistant status', true)
-        item.content = historylib.AssistantContent(message)
-        for part in item.content
-          if part.type == 'output_text'
-            part.annotations = []
-          endif
-        endfor
-        for field in ['id', 'phase']
-          if has_key(message, field)
-            item[field] = message[field]
-          endif
-        endfor
+        # status, id and phase describe API output items, not input messages.
+        # Keep them in the local history metadata, but never echo them back.
+        historylib.AssistantContent(message)
+        item.content = message.content
       endif
       add(output, item)
     endif
@@ -112,7 +135,7 @@ def BuildPayload(model: dict<any>, messages: list<dict<any>>, tools: list<dict<a
   payload.model = model.model
   # Responses pairs calls with results by call_id and permits intervening items.
   messagelib.ValidateTools(messages, true)
-  payload.input = SerializeMessages(messages)
+  payload.input = SerializeMessages(messages, ModelKey(model))
   payload.stream = stream
   if !empty(tools)
     payload.tools = BuildTools(tools)
@@ -120,7 +143,7 @@ def BuildPayload(model: dict<any>, messages: list<dict<any>>, tools: list<dict<a
   return json_encode(payload)
 enddef
 
-def NormalizeResponse(response: any): dict<any>
+def NormalizeResponse(response: any, model_key: string): dict<any>
   if type(response) != v:t_dict
     throw 'response must be a JSON object'
   endif
@@ -167,7 +190,7 @@ def NormalizeResponse(response: any): dict<any>
       if has_key(item, 'encrypted_content') && item.encrypted_content != null
         RequireString(item.encrypted_content, 'reasoning encrypted_content')
       endif
-      add(history, extend(copy(item), {role: 'reasoning'}, 'force'))
+      add(history, extend(copy(item), {role: 'reasoning', akari_model: model_key}, 'force'))
     elseif kind == 'message'
       if get(item, 'role', '') != 'assistant' || type(get(item, 'content', null)) != v:t_list
         throw 'response message must have assistant role and a content list'
@@ -264,7 +287,7 @@ def ProcessStreamEvent(event: dict<any>, state: dict<any>, OnChunk: any): void
       throw 'stream contains multiple terminal responses'
     endif
     # Only terminal output is authoritative; tool argument deltas are not accumulated.
-    state.response = NormalizeResponse(get(object, 'response', null))
+    state.response = NormalizeResponse(get(object, 'response', null), state.model_key)
   elseif kind == 'response.output_text.delta' || kind == 'response.refusal.delta'
       || kind == 'response.reasoning_summary_text.delta'
     var delta = RequireString(get(object, 'delta', null), 'stream delta')
@@ -309,7 +332,7 @@ def FinishResponse(result: dict<any>, state: dict<any>, stream: bool, OnDone: an
       endif
       response = state.response
     else
-      response = NormalizeResponse(json_decode(get(result, 'body', '')))
+      response = NormalizeResponse(json_decode(get(result, 'body', '')), state.model_key)
     endif
   catch
     call(OnDone, [{choices: [], error: 'invalid responses response: ' .. v:exception}])
@@ -367,7 +390,7 @@ def RememberResponse(buf: number, model: dict<any>, tools: list<dict<any>>, requ
       && !get(response, 'cancelled', false) && !has_key(response, 'incomplete')
     continuations[string(buf)] = {
       id: id, model: deepcopy(model), tools: deepcopy(tools),
-      input: request.input + SerializeMessages(response.choices[0].message.history),
+      input: request.input + SerializeMessages(response.choices[0].message.history, ModelKey(model)),
             messages: request.messages + deepcopy(response.choices[0].message.history),
     }
   endif
@@ -382,7 +405,9 @@ export def Chat(model: dict<any>, messages: list<dict<any>>, tools: list<dict<an
     var body: string = request.body
     var Done = (response: dict<any>) => RememberResponse(buf, model, tools, request, response, OnDone)
     LogRequest(model, body, stream, messages, tools)
-    var state: dict<any> = {response: null, parse_error: '', error: ''}
+    var state: dict<any> = {
+      response: null, parse_error: '', error: '', model_key: ModelKey(model),
+    }
     var OnChunk = get(options, 'on_chunk', null)
     var headers = ['Content-Type: application/json']
     if model.api_key != ''
