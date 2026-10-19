@@ -20,7 +20,11 @@ enddef
 
 def ReportError(message: string): void
 	echohl ErrorMsg
-	echomsg 'akari: ' .. message
+	var prefix = 'akari: '
+	for line in split(message, "\n", true)
+		echomsg prefix .. line
+		prefix = '       '
+	endfor
 	echohl None
 enddef
 
