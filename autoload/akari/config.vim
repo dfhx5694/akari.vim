@@ -75,6 +75,13 @@ export def Model(name: string): dict<any>
 			throw 'akari: model ' .. name .. ': ' .. key .. ' must be a non-empty string'
 		endif
 	endfor
+	model.endpoint = substitute(trim(model.endpoint), '/\+$', '', '')
+	if model.endpoint == ''
+		throw 'akari: model ' .. name .. ': endpoint must not be empty'
+	endif
+	if model.endpoint =~ '[[:space:]]' || model.endpoint =~ '[[:cntrl:]]'
+		throw 'akari: model ' .. name .. ': endpoint contains whitespace or control characters: ' .. string(model.endpoint)
+	endif
 	if type(model.type) != v:t_string || index(['chat_completions', 'responses'], model.type) < 0
 		throw 'akari: model ' .. name .. ': type must be chat_completions or responses'
 	endif
