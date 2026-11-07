@@ -90,17 +90,15 @@ def RunSession(buf: number, state: dict<any>, response: any, has_response: bool 
 		FinishSession(buf)
 		return
 	endif
-	if has_response && state.stream && (state.model.type == 'responses'
-		|| state.stopped || get(response, 'cancelled', false) || get(response, 'error', '') != '')
-		history.RestoreResponse(buf, state.response_lines)
-	endif
 	if state.stopped
 		FinishSession(buf)
 		return
 	endif
 
 	if !has_response
-		state.response_lines = getbufline(buf, 1, '$')
+		if state.stream
+			history.BeginStream(buf)
+		endif
 		var request_options: dict<any> = {stream: state.stream, buf: buf}
 		if state.stream
 			request_options.on_chunk = (role: string, content: string) => {
@@ -134,7 +132,10 @@ def RunSession(buf: number, state: dict<any>, response: any, has_response: bool 
 	var reasoning: string = message.reasoning_content
 	var structured = has_key(message, 'history')
 	if structured
-
+		# The streamed text was a preview; replace it with the final history.
+		if state.stream && !empty(message.history)
+			history.DropStream(buf)
+		endif
 		for item in message.history
 			history.AppendMessage(item, buf)
 			add(state.messages, item)

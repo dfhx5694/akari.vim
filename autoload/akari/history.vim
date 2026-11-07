@@ -3,6 +3,7 @@ vim9script
 import autoload 'akari/config.vim'
 
 var streaming: dict<any> = {}
+var stream_bounds: dict<any> = {}
 var usages: dict<any> = {}
 
 def IsMarkerLike(line: string): bool
@@ -86,6 +87,25 @@ def SealPending(lines: list<string>): void
   endif
   while index < len(lines)
     lines[index] = EscapeLine(lines[index])
+    index += 1
+  endwhile
+enddef
+
+# Inverse of SealPending, used only for a region that SealPending already
+# escaped: dropping a streamed preview must leave the pending input unchanged
+# so the final block seals it exactly once.
+def UnsealPending(lines: list<string>): void
+  var index = PendingStart(lines)
+  if index < 0
+    return
+  endif
+  while index < len(lines)
+    if strpart(lines[index], 0, 1) == '\'
+      var unescaped = strpart(lines[index], 1)
+      if IsMarkerLike(unescaped) || strpart(unescaped, 0, 1) == '\'
+        lines[index] = unescaped
+      endif
+    endif
     index += 1
   endwhile
 enddef
@@ -182,6 +202,9 @@ export def Forget(buf: number): void
   var key = string(buf)
   if has_key(streaming, key)
     remove(streaming, key)
+  endif
+  if has_key(stream_bounds, key)
+    remove(stream_bounds, key)
   endif
   if has_key(usages, key)
     remove(usages, key)
@@ -433,10 +456,38 @@ export def AppendMessage(message: dict<any>, buf: number): void
   Append(role, content, buf, has_metadata)
 enddef
 
-export def RestoreResponse(buf: number, lines: list<string>): void
+# Mark where the blocks of a streamed response start. Called once per request.
+export def BeginStream(buf: number): void
   EndStream(buf)
+  stream_bounds[string(buf)] = {start: len(getbufline(buf, 1, '$'))}
+enddef
+
+# Remove the blocks written by the preview of a streamed response, so the
+# canonical history can be appended without duplicating the text. Anything
+# typed after the preview is left alone.
+export def DropStream(buf: number): void
+  EndStream(buf)
+  var key = string(buf)
+  if !has_key(stream_bounds, key)
+    return
+  endif
+  var bounds: dict<any> = remove(stream_bounds, key)
+  if !has_key(bounds, 'end') || bounds.end <= bounds.start
+    return
+  endif
+  var lines = getbufline(buf, 1, '$')
+  var last = bounds.end < len(lines) ? bounds.end : len(lines)
+  if last <= bounds.start
+    return
+  endif
+  if deletebufline(buf, bounds.start + 1, last) != 0
+    echoerr 'akari: failed to drop the streamed response'
+    return
+  endif
+  lines = getbufline(buf, 1, '$')
+  UnsealPending(lines)
   if !SetBufferLines(buf, lines)
-    throw 'akari: failed to restore response history'
+    echoerr 'akari: failed to restore user input'
   endif
 enddef
 
@@ -509,6 +560,10 @@ export def AppendStreamChunk(role: string, content: string, buf: number): void
   stream.tail = raw[-1]
   stream.encoded_tail = encoded[-1]
   streaming[key] = stream
+  if has_key(stream_bounds, key)
+    var bounds: dict<any> = stream_bounds[key]
+    bounds.end = stream.tail_line
+  endif
   if buf == bufnr()
     cursor(line('$'), 1)
     redraw
