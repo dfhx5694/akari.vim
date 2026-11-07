@@ -59,16 +59,18 @@ def SetFoldMethod(buf: number, method: string): void
 	endfor
 enddef
 
-def LastUserRequest(messages: list<dict<any>>): string
+def RecentUserRequests(messages: list<dict<any>>, limit: number): list<string>
+	var requests: list<string> = []
 	var index = len(messages) - 1
-	while index >= 0
+	while index >= 0 && len(requests) < limit
 		if get(messages[index], 'role', '') == 'user'
 			var content: any = get(messages[index], 'content', '')
-			return type(content) == v:t_string ? content : json_encode(content)
+			add(requests, type(content) == v:t_string ? content : json_encode(content))
 		endif
 		index -= 1
 	endwhile
-	return ''
+	reverse(requests)
+	return requests
 enddef
 
 def FinishSession(buf: number): void
@@ -221,7 +223,7 @@ def ExecuteRequests(buf: number, state: dict<any>, requests: list<dict<any>>, re
 		tool.Execute(request.tool, arguments, buf, Done, {
 			enabled: state.auto_approve,
 			model: state.approval_model,
-			goal: state.user_request,
+			goals: state.user_requests,
 		})
 	endif
 enddef
@@ -263,7 +265,7 @@ export def Ask(): void
 		stream: options.stream,
 		auto_approve: options.auto_approve,
 		approval_model: approval_model,
-		user_request: LastUserRequest(messages),
+		user_requests: RecentUserRequests(messages, options.auto_approval_user_messages),
 	}
 	states[key] = state
 	SetFoldMethod(buf, 'manual')

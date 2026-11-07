@@ -14,6 +14,7 @@ export def Options(): dict<any>
 		auto_approve: false,
 		auto_approval_model: '',
 		auto_approval_prompt: '',
+		auto_approval_user_messages: 3,
 		log_file: '',
 	}
 	extend(options, deepcopy(configured), 'force')
@@ -27,6 +28,10 @@ export def Options(): dict<any>
 	endif
 	if type(options.stream) != v:t_bool
 		throw 'akari: option stream must be a boolean'
+	endif
+	if type(options.auto_approval_user_messages) != v:t_number
+			|| options.auto_approval_user_messages <= 0
+		throw 'akari: option auto_approval_user_messages must be a positive integer'
 	endif
 	var instructions: any = options.instructions_file
 	if type(instructions) == v:t_list

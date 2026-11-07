@@ -121,6 +121,7 @@ Example: >
 		"auto_approve": true,
 		"auto_approval_model": "openai",
 		"auto_approval_prompt": "Require confirmation for destructive actions.",
+		"auto_approval_user_messages": 3,
 		"log_file": "~/akari.log",
 	}
 <
@@ -145,13 +146,18 @@ default to an empty list, and booleans default to false.
 						defaults to the current model
 	auto_approval_prompt	string		Additional policy prompt for
 						automatic approval
+	auto_approval_user_messages
+					number		Number of recent user messages
+						provided for automatic review;
+						default 3
 	log_file		string		Path to the log file
 
 When auto_approve is enabled, non-whitelisted calls are reviewed by an AI
 model; an approval allows execution, while a rejection or review failure falls
-back to the usual confirmation prompt. The selected model receives the latest
-user request and the proposed tool name, description, and arguments. The
-default review policy denies actions it cannot confidently allow. Its
+back to the usual confirmation prompt. The selected model receives the most
+recent user messages, up to auto_approval_user_messages, and the proposed tool
+name, description, and arguments. Messages are provided in chronological order.
+The default review policy denies actions it cannot confidently allow. Its
 structured decision and reason are appended to log_file when it is set. If
 log_file is not set, review proceeds without logging; if writing fails, the
 usual prompt is shown. This is an AI review, not a sandbox or a guarantee of

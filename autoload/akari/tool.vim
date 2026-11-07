@@ -88,7 +88,6 @@ enddef
 
 # Keys shown first in the confirmation prompt; the rest follow alphabetically.
 var PROMPT_FIRST: list<string> = ['path', 'command', 'pattern', 'job_id']
-var PREVIEW_MAX = 120
 
 def OrderedKeys(input: dict<any>): list<string>
   var ordered: list<string> = []
@@ -112,9 +111,6 @@ def Preview(value: any): string
     suffix = ' [' .. len(split(text, "\n", true)) .. ' lines]'
   endif
   text = substitute(text, "\n", '\\n', 'g')
-  if strchars(text) > PREVIEW_MAX
-    text = strcharpart(text, 0, PREVIEW_MAX) .. '...'
-  endif
   return text .. suffix
 enddef
 
@@ -172,7 +168,7 @@ export def Execute(name: string, input: dict<any>, buf: number, OnDone: func, ap
   endif
 
   if get(approval, 'enabled', false)
-    AutoApproval.Review(approval.model, name, tool.description, input, approval.goal, buf,
+    AutoApproval.Review(approval.model, name, tool.description, input, approval.goals, buf,
       (result: dict<any>) => {
         if result.status == 'cancelled'
           Done({ok: false, output: result.reason, cancelled: true, status: 'cancelled'})
