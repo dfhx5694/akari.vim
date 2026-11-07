@@ -1,6 +1,7 @@
 vim9script
 
 import autoload 'akari/config.vim' as config
+import autoload 'akari/auto_approval.vim' as AutoApproval
 import autoload 'akari/tools/bash.vim' as Bash
 import autoload 'akari/tools/edit.vim' as Edit
 import autoload 'akari/tools/list_dir.vim' as ListDir
@@ -117,35 +118,19 @@ def Preview(value: any): string
   return text .. suffix
 enddef
 
-def ConfirmText(name: string, input: dict<any>): string
+def ConfirmText(name: string, input: dict<any>, note: string = ''): string
   var lines = ['akari: ' .. name]
   for key in OrderedKeys(input)
     add(lines, '  ' .. key .. ': ' .. Preview(input[key]))
   endfor
+  if note != ''
+    add(lines, '  automatic review: ' .. Preview(note))
+  endif
   return join(lines, "\n")
 enddef
 
-export def Execute(name: string, input: dict<any>, buf: number, OnDone: func): void
-  var completion = {done: false}
-  var Done = (result: any) => {
-    if !completion.done
-      completion.done = true
-      call(OnDone, [NormalizeResult(name, result)])
-    endif
-  }
-  if !has_key(tools, name)
-    Done({ok: false, output: 'unknown tool: ' .. name})
-    return
-  endif
-  var tool = tools[name]
-  var allowed = config.Options().always_allow_tools
-  if index(allowed, name) < 0
-    var prompt = ConfirmText(name, input)
-    if confirm(prompt, "&Yes\n&No") != 1
-      Done({ok: false, output: 'user denied tool access', denied: true})
-      return
-    endif
-  endif
+def RunTool(tool: dict<any>, input: dict<any>, buf: number, Done: func, completion: dict<any>): void
+  var name: string = tool.name
   var key = string(buf)
   if !has_key(session_states, key)
     session_states[key] = {}
@@ -165,6 +150,54 @@ export def Execute(name: string, input: dict<any>, buf: number, OnDone: func): v
     endif
     Done({ok: false, output: 'tool ' .. name .. ' error: ' .. v:exception})
   endtry
+enddef
+
+export def Execute(name: string, input: dict<any>, buf: number, OnDone: func, approval: dict<any> = {}): void
+  var completion = {done: false}
+  var Done = (result: any) => {
+    if !completion.done
+      completion.done = true
+      call(OnDone, [NormalizeResult(name, result)])
+    endif
+  }
+  if !has_key(tools, name)
+    Done({ok: false, output: 'unknown tool: ' .. name})
+    return
+  endif
+  var tool = tools[name]
+  var options = config.Options()
+  if index(options.always_allow_tools, name) >= 0
+    RunTool(tool, input, buf, Done, completion)
+    return
+  endif
+
+  if get(approval, 'enabled', false)
+    AutoApproval.Review(approval.model, name, tool.description, input, approval.goal, buf,
+      (result: dict<any>) => {
+        if result.status == 'cancelled'
+          Done({ok: false, output: result.reason, cancelled: true, status: 'cancelled'})
+          return
+        endif
+        var reason: string = get(result, 'reason', 'automatic review did not return a decision')
+        if result.status == 'completed' && result.allow
+          RunTool(tool, input, buf, Done, completion)
+          return
+        endif
+        var prompt = ConfirmText(name, input, result.status .. ': ' .. reason)
+        if confirm(prompt, "&Yes\n&No") != 1
+          Done({ok: false, output: 'user denied tool access after automatic review: ' .. reason, denied: true})
+          return
+        endif
+        RunTool(tool, input, buf, Done, completion)
+      })
+    return
+  endif
+
+  if confirm(ConfirmText(name, input), "&Yes\n&No") != 1
+    Done({ok: false, output: 'user denied tool access', denied: true})
+    return
+  endif
+  RunTool(tool, input, buf, Done, completion)
 enddef
 
 def StopSession(key: string): void

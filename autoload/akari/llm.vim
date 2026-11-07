@@ -59,6 +59,18 @@ def SetFoldMethod(buf: number, method: string): void
 	endfor
 enddef
 
+def LastUserRequest(messages: list<dict<any>>): string
+	var index = len(messages) - 1
+	while index >= 0
+		if get(messages[index], 'role', '') == 'user'
+			var content: any = get(messages[index], 'content', '')
+			return type(content) == v:t_string ? content : json_encode(content)
+		endif
+		index -= 1
+	endwhile
+	return ''
+enddef
+
 def FinishSession(buf: number): void
 	history.EndStream(buf)
 	var key = string(buf)
@@ -205,7 +217,11 @@ def ExecuteRequests(buf: number, state: dict<any>, requests: list<dict<any>>, re
 	if type(arguments) != v:t_dict
 		Done({ok: false, output: 'invalid tool arguments: expected a JSON object; correct the arguments and try again'})
 	else
-		tool.Execute(request.tool, arguments, buf, Done)
+		tool.Execute(request.tool, arguments, buf, Done, {
+			enabled: state.auto_approve,
+			model: state.approval_model,
+			goal: state.user_request,
+		})
 	endif
 enddef
 
@@ -234,12 +250,19 @@ export def Ask(): void
 		echo 'akari: current model is ' .. model_name
 	endif
 	var selected_model = config.Model(model_name)
+	var approval_model = selected_model
+	if options.auto_approve && options.auto_approval_model != ''
+		approval_model = config.Model(options.auto_approval_model)
+	endif
 	var state: dict<any> = {
 		stopped: false,
 		messages: messages,
 		model: selected_model,
 		tools: tool.Definitions(),
 		stream: options.stream,
+		auto_approve: options.auto_approve,
+		approval_model: approval_model,
+		user_request: LastUserRequest(messages),
 	}
 	states[key] = state
 	SetFoldMethod(buf, 'manual')

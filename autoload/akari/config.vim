@@ -11,14 +11,20 @@ export def Options(): dict<any>
 		instructions_file: '',
 		stream: false,
 		always_allow_tools: [],
+		auto_approve: false,
+		auto_approval_model: '',
+		auto_approval_prompt: '',
 		log_file: '',
 	}
 	extend(options, deepcopy(configured), 'force')
-	for key in ['default_model', 'system_prompt', 'log_file']
+	for key in ['default_model', 'system_prompt', 'auto_approval_model', 'auto_approval_prompt', 'log_file']
 		if type(options[key]) != v:t_string
 			throw 'akari: option ' .. key .. ' must be a string'
 		endif
 	endfor
+	if type(options.auto_approve) != v:t_bool
+		throw 'akari: option auto_approve must be a boolean'
+	endif
 	if type(options.stream) != v:t_bool
 		throw 'akari: option stream must be a boolean'
 	endif

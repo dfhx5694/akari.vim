@@ -118,12 +118,15 @@ Example: >
 		"instructions_file": "~/.config/akari/instructions.md",
 		"stream": true,
 		"always_allow_tools": ["read_file", "search", "list_dir"],
+		"auto_approve": true,
+		"auto_approval_model": "openai",
+		"auto_approval_prompt": "Require confirmation for destructive actions.",
 		"log_file": "~/akari.log",
 	}
 <
 
-All fields are optional. If omitted, string fields default to an empty string
-and list fields default to an empty list.
+All fields are optional. String fields default to an empty string, list fields
+default to an empty list, and booleans default to false.
 
 	Field			Type		Description~
 	default_model		string		Default model; a key of
@@ -135,11 +138,29 @@ and list fields default to an empty list.
 						arrive; default false
 	always_allow_tools	list		Tools that run without
 						confirmation
+	auto_approve		bool		Use an AI model to review
+						non-whitelisted tool calls;
+						default false
+	auto_approval_model	string		Model key for review;
+						defaults to the current model
+	auto_approval_prompt	string		Additional policy prompt for
+						automatic approval
 	log_file		string		Path to the log file
+
+When auto_approve is enabled, non-whitelisted calls are reviewed by an AI
+model; an approval allows execution, while a rejection or review failure falls
+back to the usual confirmation prompt. The selected model receives the latest
+user request and the proposed tool name, description, and arguments. The
+default review policy denies actions it cannot confidently allow. Its
+structured decision and reason are appended to log_file when it is set. If
+log_file is not set, review proceeds without logging; if writing fails, the
+usual prompt is shown. This is an AI review, not a sandbox or a guarantee of
+safe behavior.
 
 Caution: Adding tools that can modify files or run commands (such as write,
 edit, or run_command) to always_allow_tools gives the model permission to use
-them without confirmation. Do so only if you trust the workflow.
+them without confirmation or automatic review. Do so only if you trust the
+workflow.
 
 ------------------------------------------------------------------------------
 5.2 Model definitions                                   *g:akari_models*
@@ -207,7 +228,8 @@ Any other fields are passed through to the API unchanged. For example: >
 
 The assistant can call the built-in tools listed below. Use |:AkariTools| to
 see which tools are available in the current session. Tools not included in
-the always_allow_tools whitelist require confirmation before execution.
+the always_allow_tools whitelist require confirmation before execution, unless
+|g:akari_options| enables automatic approval.
 
 	read_file
 		Read a range of lines from a file. If the file is loaded in a
